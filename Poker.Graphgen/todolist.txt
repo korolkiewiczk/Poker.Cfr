@@ -1,0 +1,7 @@
+﻿Elaborated on 02.07.2018:
+-Add relative betting (relative to current pot) - as option
++Cleanup code
+-Generic HandGenerator
+-Find good lib for cards bucketing
++Config for db connections and node gen options with training
++Cfr - option for injection

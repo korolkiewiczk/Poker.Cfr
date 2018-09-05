@@ -1,0 +1,5 @@
+﻿Elaborated on 02.07.2018:
+-Approx move for player
+-Cleanup code
+-Player source - not only db
+-Config
