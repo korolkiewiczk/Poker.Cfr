@@ -14,12 +14,12 @@ namespace Poker.Datalayer
             _connection = ConnectToDatabase();
         }
 
-        public bool GetPossibleActions(int pos, int hand, string actionHistory, out int? nextPos, out string actions, out int section, out string prob,
+        public bool GetPossibleActions(int pos, int hand, string actionHistory, out int? nextPos, out string actions, out int round, out string prob,
             out int? pay)
         {
             nextPos = null;
             actions = null;
-            section = -1;
+            round = -1;
             prob = null;
             pay = null;
 
@@ -35,7 +35,7 @@ namespace Poker.Datalayer
                     {
                         nextPos = DbIntVal(reader, "NextPlayer");
                         actions = reader["PossibleActions"]?.ToString();
-                        section = DbIntVal(reader, "Section").Value;
+                        round = DbIntVal(reader, "Round").Value;
                         prob = reader["cfr"]?.ToString();
                         pay = DbIntVal(reader, "pay");
                         return true;

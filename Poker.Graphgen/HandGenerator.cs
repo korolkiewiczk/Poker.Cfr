@@ -33,7 +33,7 @@ namespace Poker.Graphgen
             else if (cardSet.IsLoosing) handInfo.WinningPlayer = 1;
             else handInfo.WinningPlayer = -1;
 
-            //PF,F,T,R hand evaluation
+            //PreFlop,Flop,Turn,River hand evaluation
             int hand = 0;
 
             Card[] playerHand = playerDeck.Cards.Take(2).ToArray();

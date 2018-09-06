@@ -9,11 +9,11 @@ namespace Poker.Graphgen.Model
         private readonly Dictionary<int, float[]> _strategy;
         private readonly Dictionary<int, float[]> _strategySum;
 
-        public Node(byte pos, Action action, Section section, Node[] children, int payOff = 0)
+        public Node(byte pos, Action action, Round round, Node[] children, int payOff = 0)
         {
             Pos = pos;
             Action = action;
-            Section = section;
+            Round = round;
             Children = children;
             PayOff = (short)payOff;
 
@@ -26,18 +26,18 @@ namespace Poker.Graphgen.Model
 
         public Action Action { get; }
 
-        public Section Section { get; }
+        public Round Round { get; }
 
         public Node[] Children { get; }
 
         public short PayOff { get; }
 
-        public static bool IsTerminal(Section section) => section == Section.Fold || section == Section.Show;
-        public bool IsTerminal() => IsTerminal(Section);
+        public static bool IsTerminal(Round round) => round == Round.Fold || round == Round.Showdown;
+        public bool IsTerminal() => IsTerminal(Round);
 
         public override string ToString()
         {
-            return $"P={Pos} A={Action} S={Section}" + (IsTerminal() ? $" PAY={PayOff}" : "");
+            return $"P={Pos} A={Action} S={Round}" + (IsTerminal() ? $" PAY={PayOff}" : "");
         }
 
         public string ToStringFull(int hand)
@@ -149,7 +149,7 @@ namespace Poker.Graphgen.Model
 
         private int GetHand(int hand)
         {
-            return hand & ((16 << (4 * (int)Section)) - 1);
+            return hand & ((16 << (4 * (int)Round)) - 1);
         }
     }
 }

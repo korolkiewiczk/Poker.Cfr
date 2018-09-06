@@ -6,160 +6,232 @@ using Action = Poker.Graphgen.Model.Action;
 
 namespace Poker.Graphgen
 {
+    /// <summary>
+    /// Generates poker game tree
+    /// <remarks>Right now, generation is only valid for two players.</remarks>
+    /// </summary>
     public class NodeGen
     {
-        private readonly int[][] _possibleRaises;
-        private readonly int _reraiseAmount;
-        private readonly int _numPlayers;
-        private readonly int _sbValue;
-        private readonly int _bbValue;
-        private readonly int _bankroll;
-
-        private NodeGen(int[][] possibleRaises, int reraiseAmount, int numPlayers, int sbValue, int bbValue, int bankroll)
-        {
-            if (possibleRaises.Length != 4)
-            {
-                throw new Exception("Number of raises types must be 4 (PF,F,T,R)");
-            }
-
-            _possibleRaises = possibleRaises;
-            _reraiseAmount = reraiseAmount;
-            _numPlayers = numPlayers;
-            _sbValue = sbValue;
-            _bbValue = bbValue;
-            _bankroll = bankroll;
-        }
+        private readonly NodeGenConfig _config;
 
         public NodeGen(NodeGenConfig config)
-            : this(config.PossibleRaises, config.ReraiseAmount, config.NumPlayers, config.SbValue, config.BbValue, config.Bankroll)
         {
-
+            if (config.PossibleRaises.Length != 4)
+            {
+                throw new Exception("Number of raises types must be 4 (PreFlop, Flop, Turn, River)");
+            }
+            _config = config;
         }
 
         public Node Generate()
         {
-            int[] invest = GetInvestValues();
+            int[] invest = GetStartingInvestValues();
 
-            Node childNode = Generate_rek(_numPlayers - 1, Action.Initial(_sbValue), Section.PF, _reraiseAmount + 1, Action.Initial(_sbValue), _sbValue + _bbValue, invest);
+            Node childNode = GenerateRecursive(
+                player: _config.NumPlayers - 1,
+                currentAction: Action.Initial(_config.SbValue), 
+                round: Round.PreFlop, 
+                availableReraises: _config.ReraiseAmount + 1,   //add one for preflop - bigblind can react for smallblind raise
+                prevAction: Action.Initial(_config.SbValue), 
+                pot: _config.SbValue + _config.BbValue, 
+                invest: invest);
 
-            Node rootNode = new Node((byte)(_numPlayers - 2), Action.Initial(_sbValue), Section.PF, new[] { childNode }, invest.Max());
+            Node rootNode = new Node(
+                pos: (byte)(_config.NumPlayers - 2), 
+                action: Action.Initial(_config.SbValue), 
+                round: Round.PreFlop, 
+                children: new[] { childNode }, 
+                payOff: invest.Max());
 
             return rootNode;
         }
 
-        private int[] GetInvestValues()
+        private int[] GetStartingInvestValues()
         {
-            int[] invest = new int[_numPlayers];
-            invest[_numPlayers - 1] = _bbValue;
-            invest[_numPlayers - 2] = _sbValue;
+            int[] invest = new int[_config.NumPlayers];
+            invest[_config.NumPlayers - 1] = _config.BbValue;
+            invest[_config.NumPlayers - 2] = _config.SbValue;
             return invest;
         }
 
-        private Node Generate_rek(int player, Action action, Section section, int reraiseAmount, Action prevAction, int pot, int[] invest)
+        /// <summary>
+        /// Generate poker game tree recursive
+        /// </summary>
+        /// <param name="player">Current player for which sub tree is generated. 0 is dealer, max is small blind</param>
+        /// <param name="currentAction">Currently performed action</param>
+        /// <param name="round">Current round</param>
+        /// <param name="availableReraises">Number of available reraises. If zero, only Fold/Call/All actions are possible</param>
+        /// <param name="prevAction">Previous action</param>
+        /// <param name="pot">Current deal pot</param>
+        /// <param name="invest">How much players invested</param>
+        /// <returns>Node with recursively generated child nodes for subtree game states</returns>
+        private Node GenerateRecursive(int player, Action currentAction, Round round, int availableReraises, Action prevAction, int pot, int[] invest)
         {
-            if (player == 1 && action.OpType == OpType.Call && section == Section.PF)
+            if (IsSmallblindLimpedBigBlindOnPreflop(player, currentAction, round))
             {
-                reraiseAmount = _reraiseAmount;
+                availableReraises = _config.ReraiseAmount;
             }
 
-            Action[] actions = GetPossibleActions(section, reraiseAmount, action);
+            //todo BUG - player=1 has only one CALL action in new section when betting was previously performed
+            Action[] possibleActions = GetPossibleActions(round, availableReraises, currentAction, pot);
 
-            List<Node> nodes = new List<Node>(actions.Length);
-            for (int i = 0; i < actions.Length; i++)
+            List<Node> nodes = new List<Node>(possibleActions.Length);
+            foreach (var possibleAction in possibleActions)
             {
-                var newSection = GetNewSection(player, actions[i], section, action, prevAction, reraiseAmount);
-
-                bool isNewSection = newSection < Section.Show && newSection != section;
-                int nextOpp = NextOpp(player, isNewSection);
-
-                if (actions[i].OpType == OpType.All)
+                Action newCurrentAction = SaturateBet(invest, possibleAction);
+                if (newCurrentAction.Equals(Action.Invalid))
                 {
-                    actions[i] = new Action(OpType.All, actions[i].NumRaise - invest.Max());
+                    continue;
                 }
 
-                int[] newInvest = new int[invest.Length];
-                Array.Copy(invest, newInvest, invest.Length);
-                int investValue = GetInvestValue(actions[i], action);
-                newInvest[nextOpp] += investValue;
-                int diff = action.OpType == OpType.Raise ? 1 : 0;
-                nodes.Add(Generate_rek(nextOpp, actions[i], newSection,
-                    newSection != section ? _reraiseAmount : reraiseAmount - diff, action,
-                    pot + investValue, newInvest));
+                int[] newInvest = GetNewInvest(invest);
+                int investValue = GetCurrentActionInvestValue(newCurrentAction, currentAction);     //invest raises by current action bet
+
+                var newRound = GetNewRound(player, possibleAction, round, currentAction, prevAction, availableReraises);
+
+                bool isNewRound = newRound < Round.Showdown && newRound != round;
+
+                int nextPlayerPosition = NextPlayerPosition(player, isNewRound);
+                newInvest[nextPlayerPosition] += investValue;   //next player invest raises by his bet
+                int reraiseDiff = currentAction.OpType == OpType.Raise ? 1 : 0; //if raise action is performed, number of possible reraises is decreased by one
+
+                var newReraiseAmount = isNewRound ? _config.ReraiseAmount : availableReraises - reraiseDiff;
+                var newPot = pot + investValue;
+
+                nodes.Add(GenerateRecursive(nextPlayerPosition, newCurrentAction, newRound, newReraiseAmount,
+                    currentAction, //currentAction becomes prevAction
+                    newPot, newInvest));
             }
 
-            return new Node((byte)player, action, section, nodes.ToArray(),
-                GetPayOff(player, section, pot, invest));
+            return new Node((byte)player, currentAction, round, nodes.ToArray(),
+                GetPayOff(player, round, pot, invest));
         }
 
-        private static int GetPayOff(int player, Section section, int pot, int[] invest)
+        private static int[] GetNewInvest(int[] invest)
         {
-            if (Node.IsTerminal(section))
+            int[] newInvest = new int[invest.Length];
+            Array.Copy(invest, newInvest, invest.Length);
+            return newInvest;
+        }
+
+        /// <summary>
+        /// Situation when Small blind player has called (limped) Bigblind. Bigblind can perform betting action
+        /// </summary>
+        private static bool IsSmallblindLimpedBigBlindOnPreflop(int player, Action currentAction, Round round)
+        {
+            return player == 1 && currentAction.OpType == OpType.Call && round == Round.PreFlop;
+        }
+
+        /// <summary>
+        /// Cut bet to it's max value
+        /// </summary>
+        private Action SaturateBet(int[] invest, Action possibleAction)
+        {
+            if (possibleAction.OpType == OpType.All)
             {
-                if (section == Section.Fold)
+                return new Action(OpType.All, possibleAction.Bet - invest.Max());
+            }
+
+            if (possibleAction.OpType == OpType.Raise 
+                && possibleAction.Bet + invest.Max() > _config.Bankroll)  //when possible raise is bigger than current player bankroll
+            {
+                return Action.Invalid;  //since All action is always included, we will skip this action at all
+            }
+
+            return possibleAction;
+        }
+
+        private static int GetPayOff(int player, Round round, int pot, int[] invest)
+        {
+            if (Node.IsTerminal(round))
+            {
+                if (round == Round.Fold)
                 {
                     invest[player] += pot;
                 }
-                return invest.Select(x => pot - x).Max();
+                return invest.Select(x => pot - x).Max();   //note that player wins pot but he invested x before.
             }
 
             return 0;
         }
 
-        private int GetInvestValue(Action newAction, Action currentAction)
+        private int GetCurrentActionInvestValue(Action newAction, Action currentAction)
         {
             switch (newAction.OpType)
             {
                 case OpType.Fold:
                     return 0;
                 case OpType.Call:
-                    return currentAction.NumRaise;
+                    return currentAction.Bet;
                 case OpType.Raise:
                 case OpType.All:
-                    return currentAction.NumRaise + newAction.NumRaise;
+                    return currentAction.Bet + newAction.Bet;
             }
 
             return 0;
         }
 
-        private Section GetNewSection(int player, Action newAction, Section section, Action currentAction, Action prevAction, int reraiseAmount)
+        /// <summary>
+        /// Gets new round according to current game state and betting
+        /// </summary>
+        /// <param name="player">Parent player performing action. He performed <see cref="currentAction"/></param>
+        /// <param name="newAction">Newly performed action for next player. It can be the same player if new round starts. Decided after.</param>
+        /// <param name="round">Current round (on which <see cref="player"/> is</param>
+        /// <param name="currentAction">Current action (which <see cref="player"/> performs)</param>
+        /// <param name="prevAction">Previous action</param>
+        /// <param name="availableReraises">Available amount of reraise</param>
+        /// <returns>New round for next player</returns>
+        private Round GetNewRound(int player, Action newAction, Round round, Action currentAction, Action prevAction, int availableReraises)
         {
-            if (newAction.OpType == OpType.Fold) return Section.Fold;
-
-            if (newAction.OpType == OpType.Call && currentAction.OpType == OpType.All
-                || section == Section.R && NextOpp(player) == 0 && newAction.OpType == OpType.Call
-                || section == Section.R && NextOpp(player) == 1 && newAction.OpType == OpType.Call && currentAction.OpType == OpType.Raise)
+            if (newAction.OpType == OpType.Fold)    //if we folds, go to Fold round
             {
-                return Section.Show;
+                return Round.Fold;
             }
 
-            if (section > Section.PF)
+            if (newAction.OpType == OpType.Call && currentAction.OpType == OpType.All   //call all-in => Showdown
+                || round == Round.River && NextPlayerPosition(player) == 0 && newAction.OpType == OpType.Call   //Showdown after river & dealer player
+                || round == Round.River && NextPlayerPosition(player) == 1 
+                                        && newAction.OpType == OpType.Call && currentAction.OpType == OpType.Raise)  //dealer raises, next player calls - Showdown
             {
-                if (player == 0 && currentAction.OpType == OpType.Call
-                    || player == 1 && currentAction.OpType == OpType.Call && prevAction.OpType == OpType.Raise)
+                return Round.Showdown;
+            }
+
+            if (round > Round.PreFlop)
+            {
+                if (player == 0 && currentAction.OpType == OpType.Call  //dealer only calls => next round
+                    || player == 1 && currentAction.OpType == OpType.Call && prevAction.OpType == OpType.Raise) //last to decision player calls after raise => next round
                 {
-                    return section + 1;
+                    return round + 1;
                 }
             }
-            else
+            else  //preflop
             {
-                if (player == 1 && currentAction.OpType == OpType.Call
-                    || player == 0 && currentAction.OpType == OpType.Call && prevAction.OpType == OpType.Raise && reraiseAmount != _reraiseAmount)
+                if (player == 1 && currentAction.OpType == OpType.Call  //last-to-decision player only calls => Flop
+                    || player == 0 && currentAction.OpType == OpType.Call && prevAction.OpType == OpType.Raise && availableReraises != _config.ReraiseAmount) //dealer calls => Flop
                 {
-                    return section + 1;
+                    return Round.Flop;
                 }
             }
 
-            return section;
+            return round;
         }
 
-        private Action[] GetPossibleActions(Section section, int ramount, Action currentAction)
+        /// <summary>
+        /// Gets possible actions for current game state. They will be iterated for child actions
+        /// </summary>
+        /// <param name="round">Current round</param>
+        /// <param name="availableReraises">Available reraises. If zero, only Fold/Call/All actions are possible</param>
+        /// <param name="currentAction">Current action</param>
+        /// <param name="pot">Current deal pot</param>
+        /// <returns>Possible actions for current state</returns>
+        private Action[] GetPossibleActions(Round round, int availableReraises, Action currentAction, int pot)
         {
-            if (section == Section.Fold || section == Section.Show)
+            if (round == Round.Fold || round == Round.Showdown) //for terminal state, no actions are permited
             {
                 return new Action[0];
             }
 
-            if (currentAction.OpType == OpType.All)
+            if (currentAction.OpType == OpType.All) //player can only Fold or check all-in
             {
                 return new[]
                 {
@@ -168,7 +240,7 @@ namespace Poker.Graphgen
                 };
             }
 
-            if (ramount <= 0)
+            if (availableReraises <= 0) //no available reraises - just call or fold
             {
                 if (currentAction.OpType == OpType.Call)
                 {
@@ -177,32 +249,48 @@ namespace Poker.Graphgen
                         new Action(OpType.Call)
                     };
                 }
-                else
+
+                return new[]
                 {
-                    return new[]
-                    {
-                        new Action(OpType.Fold),
-                        new Action(OpType.Call)
-                    };
-                }
+                    new Action(OpType.Fold),
+                    new Action(OpType.Call)
+                };
             }
 
-            var actions = new List<Action>
+            var actions = new List<Action>  //base actions
             {
                 new Action(OpType.Call),
-                new Action(OpType.All, _bankroll)
+                new Action(OpType.All, _config.Bankroll)
             };
 
-            if (currentAction.OpType != OpType.Call)
+            if (currentAction.OpType != OpType.Call)    //we can also fold if Raise was done before
             {
                 actions.Insert(0, new Action(OpType.Fold));
             }
 
-            actions.AddRange(_possibleRaises[(int) section].Select(possibleRaise => new Action(OpType.Raise, possibleRaise)));
+            //beting
+            if (_config.RelativeBetting)
+            {
+                actions.AddRange(_config.PossibleRaises[(int)round]
+                    .Select(possibleRaise => new Action(OpType.Raise, GetRelativeBet(pot, possibleRaise))));
+            }
+            else
+            {
+                actions.AddRange(_config.PossibleRaises[(int)round]
+                    .Select(possibleRaise => new Action(OpType.Raise, possibleRaise)));
+            }
 
             return actions.ToArray();
         }
 
-        private int NextOpp(int player, bool isNewSection = false) => isNewSection ? _numPlayers - 1 : (player == 0 ? _numPlayers - 1 : player - 1);
+        private static int GetRelativeBet(int pot, int raise)
+        {
+            return raise * pot / 100;
+        }
+
+        private int NextPlayerPosition(int player, bool isNewRound = false)
+        {
+            return isNewRound ? _config.NumPlayers - 1 : (player == 0 ? _config.NumPlayers - 1 : player - 1);
+        }
     }
 }

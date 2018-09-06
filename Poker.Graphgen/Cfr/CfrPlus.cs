@@ -18,12 +18,12 @@ namespace Poker.Graphgen.Cfr
 
         public float Compute(Node node, float op)
         {
-            if (node.Section == Section.Fold)
+            if (node.Round == Round.Fold)
             {
                 return (node.Pos == _player ? -node.PayOff : node.PayOff) * op;
             }
 
-            if (node.Section == Section.Show)
+            if (node.Round == Round.Showdown)
             {
                 if (_winningPlayer == -1) return 0;
                 return (_player == _winningPlayer ? node.PayOff : -node.PayOff) * op;

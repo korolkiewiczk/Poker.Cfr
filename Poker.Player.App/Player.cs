@@ -47,7 +47,7 @@ namespace Poker.Player.App
 
             using (DbReader dbReader1 = new DbReader(_player1DbName), dbReader2 = new DbReader(_player2DbName))
             {
-                int section = 0;
+                int round = 0;
                 int? pay = null;
                 int prevpos = -1;
                 int tries = 0;
@@ -65,7 +65,7 @@ namespace Poker.Player.App
                     string actions;
                     string prob;
                     if (!dbReaders[currentPlayer].GetPossibleActions(pos, hands[currentPlayer], currentAction, out nextPos, out actions,
-                        out section, out prob,
+                        out round, out prob,
                         out pay))
                     {
                         pos = 1 - pos;
@@ -112,7 +112,7 @@ namespace Poker.Player.App
                     }
                 }
 
-                if (section == (int)Section.Fold)
+                if (round == (int)Round.Fold)
                 {
                     int k = pos ^ currentPos0Player;
                     if (k == 0)
@@ -127,7 +127,7 @@ namespace Poker.Player.App
                     }
                 }
 
-                if (section == (int)Section.Show)
+                if (round == (int)Round.Showdown)
                 {
                     int k = winningPlayer;
                     if (k == 1)

@@ -37,7 +37,7 @@ namespace Poker.Datalayer
                 using (MySqlCommand cmd = new MySqlCommand("", c))
                 {
                     string initialString =
-                        $"SET autocommit=0; INSERT INTO {DbName} (`Player`, `Hand`, `Actions`, `Section`, `NextPlayer`, `Pay`, `PossibleActions`, `Cfr`) VALUES ";
+                        $"SET autocommit=0; INSERT INTO {DbName} (`Player`, `Hand`, `Actions`, `Round`, `NextPlayer`, `Pay`, `PossibleActions`, `Cfr`) VALUES ";
                     StringBuilder sb = new StringBuilder(initialString);
                     int i = 0;
                     int total = 0;
@@ -49,7 +49,7 @@ namespace Poker.Datalayer
                         string cfr = avStrategy.Any() ? $"'{string.Join(";", avStrategy)}'" : "NULL";
                         string possibleActions = node.IsTerminal() ? "NULL" : $"'{string.Join(",", node.Children.Select(x => x.Action.ToShortString()))}'";
 
-                        sb.Append($"({node.Pos}, {hand}, '{actions}', {(int)node.Section}, {nextPlayer}, {pay}, {possibleActions}, {cfr}),");
+                        sb.Append($"({node.Pos}, {hand}, '{actions}', {(int)node.Round}, {nextPlayer}, {pay}, {possibleActions}, {cfr}),");
 
                         i++;
                         total++;
@@ -83,12 +83,12 @@ namespace Poker.Datalayer
 `Player` TINYINT NOT NULL,
 `Hand` INT (11) NOT NULL,
 `Actions` VARCHAR (100) NOT NULL,
-`Section` TINYINT NOT NULL,
+`Round` TINYINT NOT NULL,
 `NextPlayer` TINYINT,
 `Pay` SMALLINT,
 `PossibleActions` VARCHAR (100),
 `Cfr` VARCHAR (255),
-PRIMARY KEY (`Player`, `Hand`, `Actions`, `Section`) ,
+PRIMARY KEY (`Player`, `Hand`, `Actions`, `Round`) ,
 INDEX `IX_Actions` (`Actions`)
 );", connection))
             {
@@ -159,14 +159,14 @@ CREATE TABLE `Nodes1` (
 `Player` TINYINT NOT NULL,
 `Hand` INT (11) NOT NULL,
 `Actions` VARCHAR (100) NOT NULL,
-`Section` TINYINT NOT NULL,
+`Round` TINYINT NOT NULL,
 `NextPlayer` TINYINT,
 `Pay` SMALLINT,
 `PossibleActions` VARCHAR (100),
 `Cfr` VARCHAR (255),
-PRIMARY KEY (`Player`, `Hand`, `Actions`, `Section`) ,
+PRIMARY KEY (`Player`, `Hand`, `Actions`, `Round`) ,
 INDEX `IX_Actions` (`Actions`)
 );
 
-select player, HEX(hand), actions, section, pay, possibleactions, cfr from nodes1
+select player, HEX(hand), actions, round, pay, possibleactions, cfr from nodes1
 */

@@ -5,9 +5,10 @@ namespace Poker.Graphgen.Model
     public struct Action
     {
         public OpType OpType { get; }
-        public short NumRaise { get; }
+        public short Bet { get; }
 
         public static Action Initial(int b) => new Action(OpType.Raise, (short)b);
+        public static Action Invalid => new Action(OpType.Fold, -1);
 
         public Action(OpType opType)
         {
@@ -17,23 +18,23 @@ namespace Poker.Graphgen.Model
             }
 
             OpType = opType;
-            NumRaise = 0;
+            Bet = 0;
         }
 
-        public Action(OpType opType, int numRaise)
+        public Action(OpType opType, int bet)
         {
             OpType = opType;
-            NumRaise = (short)numRaise;
+            Bet = (short)bet;
         }
 
         public override string ToString()
         {
-            return $"[{OpType} {NumRaise}]";
+            return $"[{OpType} {Bet}]";
         }
 
         public string ToShortString()
         {
-            return $"{OpType.ToString()[0]}{(NumRaise != 0 ? NumRaise.ToString() : "")}";
+            return $"{OpType.ToString()[0]}{(Bet != 0 ? Bet.ToString() : "")}";
         }
     }
 }

@@ -76,12 +76,9 @@ namespace Poker.Graphgen.App
             }
 
             var rootNode = trainer.Train(out eq, out possibleHands, options.Silent ? (Action<int>)null : x =>
-             {
-                 if (x * 100 / options.Iterations != (x - 1) * 100 / options.Iterations)
-                 {
-                     Console.Write($"Training progress {x * 100 / options.Iterations}%\r");
-                 }
-             });
+            {
+                TrainProgress(options, x);
+            });
             sw.Stop();
 
             if (!options.Silent)
@@ -106,6 +103,14 @@ namespace Poker.Graphgen.App
                 Console.WriteLine($"Hand {hand:X4}");
                 dbWriter.WriteToDb(hand, rootNode, options.Silent ? (Action<int>)null : x => Console.Write($"Written {x} entires\r"));
                 Console.WriteLine();
+            }
+        }
+
+        private static void TrainProgress(Options options, int x)
+        {
+            if (x * 100 / options.Iterations != (x - 1) * 100 / options.Iterations)
+            {
+                Console.Write($"Training progress {x * 100 / options.Iterations}%\r");
             }
         }
 
